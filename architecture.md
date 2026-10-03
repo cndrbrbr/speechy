@@ -400,6 +400,7 @@ für die Spracherkennung zusätzliche Pakete und das lokale Modell.
 | --- | --- |
 | `TranscriberPanel` | Audio auswählen, Aufnahme steuern, Textvorschau bearbeiten und speichern |
 | `record_audio()` | Windows-Standardmikrofon mit sounddevice/PortAudio aufnehmen |
+| `preview_recording()` | Begrenzte Audioschnappschüsse neben der Aufnahme erkennen |
 | `transcribe_audio()` | Audiodatei mit faster-whisper auf der CPU erkennen |
 | `save_text_atomic()` | UTF-8-Text ohne Metadaten über temporäre Datei speichern |
 | `prepare_stt_assets()` | Mehrsprachiges Whisper-base-Modell herunterladen und lokal prüfen |
@@ -415,19 +416,42 @@ diese alle 80 ms, maximal 100 Einträge pro Durchlauf. Generationen verwerfen
 Nachrichten beendeter Sitzungen. Fehler werden als `error`-JSON und Exit-Code 1
 zurückgegeben. Ein erfolgreiches Ende erfordert `done` und Exit-Code 0.
 
-Der Aufnahmejob enthält `audio` und `device` (gewählte ID oder `None` für das
-Windows-Standardgerät). `RawInputStream` nutzt
+Der Aufnahmejob enthält `audio`, `device` (gewählte ID oder `None` für das
+Windows-Standardgerät), `live=True`, `model` und `language`. Das lokale Modell
+wird einmal vor dem Öffnen des Mikrofons geladen und für Vorschau sowie
+Abschlussprüfung wiederverwendet. `RawInputStream` nutzt
 einen Kanal, PCM mit 16 Bit und die Standard-Samplerate des Eingabegeräts.
 Der Worker liest etwa 100 ms pro Block und schreibt direkt in eine temporäre
 WAV-Datei; die gesamte Aufnahme wird nicht im RAM gepuffert. `recording`
 signalisiert den gestarteten Stream. Eine Zeile auf stdin oder stdin-EOF setzt
 ein Stop-Ereignis. Nach Schließen von Stream und WAV folgen `recorded` mit der
-Dauer in Sekunden und `done`. Das Stoppen ist somit regulär, während **Abbrechen**
+Dauer in Sekunden; `done` folgt nach der Abschlussprüfung. Das Stoppen ist somit regulär, während **Abbrechen**
 den Worker hart beendet. Eingabeüberläufe werden gemeldet und können Audioverlust
-bedeuten. Audio wird erst nach dem Stoppen erkannt, nicht während der Aufnahme.
+bedeuten.
 
-Nach einer erfolgreichen Aufnahme startet die GUI automatisch einen
-Transkriptionsjob. Dessen Konfiguration enthält `audio`, `model` und `language`.
+Ein zusätzlicher Erkennungsthread liest ungefähr alle zwei Sekunden einen
+Schnappschuss des aktuellen maximal acht Sekunden langen Abschnitts. Die
+Aufnahme schreibt und leert den Dateipuffer unter einer Condition-Sperre;
+der Leser kopiert unter derselben Sperre die freigegebenen PCM-Daten. Das
+Schreiben der Vorschau-WAV und die eigentliche Erkennung laufen außerhalb
+der Sperre. Ein langsames Modell blockiert somit keine Mikrofonlesevorgänge.
+Vollständige Achtsekundenabschnitte werden der Reihe nach bestätigt; verspätete
+Abschnitte werden vom Datenträger nachgelesen statt verworfen. Noch unvollständige
+Abschnitte werden erneut erkannt und ersetzen ihre vorherige Vorschau. Der
+Arbeitsspeicher hält höchstens einen Audioabschnitt und den erkannten Text.
+`beam_size=1` beschleunigt die Vorschau. Abschnittsgrenzen können vorläufig Wörter
+abschneiden; nach dem Stoppen wird die vollständige WAV erneut mit Beam 5 erkannt.
+Die tatsächliche Verzögerung hängt von CPU und Sprachpausen ab. Die Vorschau
+ist keine garantierte Wort-für-Wort-Erkennung ohne Verzögerung.
+
+Beim Stoppen wird der Stream zuerst geschlossen, dann der Vorschauthread beendet
+und anschließend die vollständige Aufnahme mit demselben Modell geprüft. Fehler
+im Vorschauthread stoppen die Aufnahme und werden an den Hauptworker weitergegeben.
+Die stdout-Ausgabe beider Threads nutzt eine Sperre gegen vermischte JSON-Zeilen.
+
+Für vorhandene Audiodateien startet die GUI einen Transkriptionsjob mit
+`audio`, `model` und `language`. Live-Aufnahme und Abschlussprüfung laufen
+im selben Aufnahmeprozess; die GUI startet hierfür keinen zweiten Job.
 Das Modell liegt in `.models/whisper-base` und wird mit `device='cpu'`,
 `compute_type='int8'` und `local_files_only=True` geladen. Die Sprachwahl ist
 `de`, `en` oder `None` für automatische Erkennung. VAD filtert Sprachpausen;
@@ -436,8 +460,14 @@ PyAV übernimmt die Audiodecodierung, sodass für diesen Pfad kein externes ffmp
 auf dem PATH erforderlich ist. Audiodateien können im Decoder vollständig in
 den Speicher geladen werden; die Verarbeitung ist kein Streaming für große Dateien.
 
-Der Worker liefert erkannte Abschnitte als `segment` mit `text`. Die GUI fügt
-je Abschnitt eine Zeile ein. Leere Abschnitte werden ignoriert; wurde insgesamt
+Der Dateiworker liefert erkannte Abschnitte als `segment` mit `text`. Die GUI fügt
+je Abschnitt eine Zeile ein. Bei Live-Aufnahmen liefert `transcript` den gesamten
+bisherigen Vorschautext und `final=False`; die GUI ersetzt den Text statt ihn
+anzuhängen, damit Wiederholungsprüfungen keine Duplikate erzeugen. Undo-Daten
+werden bei diesen automatischen Ersetzungen zurückgesetzt. Das abschließende
+Ergebnis ersetzt die Vorschau einmal mit `final=True`; bis dahin bleibt die
+Vorschau sichtbar. Nach Abbrechen oder Fehler bleibt der zuletzt sichtbare Text
+erhalten und kann gespeichert werden. Leere Abschnitte werden ignoriert; wurde insgesamt
 kein Text erkannt, folgt ein Fehler. Keine Zeitstempel oder Sprecherkennung
 werden in die Ausgabe übernommen. Während eines Jobs ist die Textbearbeitung
 gesperrt; nach Ende oder Abbruch bleibt der bisher erkannte Text bearbeitbar.
@@ -464,11 +494,16 @@ verlangt ein bereits vorhandenes ladbares Modell und lädt nichts herunter.
 Eine Mikrofonaufnahme gehört nicht zu den Einrichtungsprüfungen: fehlendes Gerät
 oder fehlende Windows-Freigabe wird erst beim bewusst gestarteten Aufnahmejob gemeldet.
 
-Die sechs Tests in `test_transcriber.py` prüfen UTF-8-Ausgabe, Dateierhalt bei
+Die elf Tests in `test_transcriber.py` prüfen UTF-8-Ausgabe, Dateierhalt bei
 Speicherfehlern, lokale Whisper-Konfiguration und Segmentnachrichten, eine
 simulierte Mikrofonaufnahme mit gültigem PCM-WAV, veraltete Ereignisse sowie
-die reine Eingabegeräteabfrage ohne Aufnahme.
-Zusammen mit Reader- und Bootstrap-Prüfungen umfasst die Suite jetzt 21 Tests.
+die reine Eingabegeräteabfrage ohne Aufnahme. Weitere Tests prüfen Vorschaukorrekturen,
+Abschnittsgrenzen, die einmalige Abschlussersetzung, GUI-Ersetzungen ohne zweiten
+Erkennungsjob, den Fehlerpfad und fortgesetzte Aufnahme bei blockierter Erkennung.
+Zusammen mit Reader- und Bootstrap-Prüfungen umfasst die Suite jetzt 26 Tests.
+Ein reales deutsches Testaudio wurde zusätzlich in Echtzeit als Mikrofonquelle
+simuliert: zwei nichtleere Vorschauen erschienen während der Aufnahme, danach
+folgten Abschlussprüfung und UTF-8-Export mit dem echten lokalen Whisper-Modell.
 Eine echte Piper→Whisper→UTF-8-Textprüfung mit deutschen und englischen
 Audiodateien wurde zusätzlich erfolgreich ausgeführt. Dabei wurde eine
 Inkompatibilität von faster-whisper 1.x mit PyAV 19 erkannt; die STT-Abhängigkeiten
