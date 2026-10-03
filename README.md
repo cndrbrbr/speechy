@@ -16,6 +16,41 @@ Job-Protokoll, Persistenz und bekannte Grenzen.
 
 ## Installation unter Windows
 
+### Automatisch mit start.bat
+
+Das gesamte Repository beziehungsweise ZIP in einen beschreibbaren Ordner
+entpacken und **start.bat** doppelklicken. Die Startdatei verwendet
+`scripts/start.ps1` und `scripts/bootstrap.py`; diese Dateien müssen mit entpackt werden.
+
+Sie prüft Python 3.11–3.13 (64 Bit) einschließlich eines echten Tk-Fenstertests.
+Fehlt eine geeignete Installation, lädt sie den signierten
+[Python-3.13.16-Installer](https://www.python.org/downloads/windows/)
+von python.org und installiert ihn im Unterordner `.runtime/python313`.
+Eine eigene Umgebung `.speechy-venv` hält die Python-Pakete getrennt.
+Globale PATH-Einstellungen werden nicht geändert; Administratorrechte werden
+nicht angefordert.
+
+Danach werden fehlende Pakete, die Piper-Stimmen `de_DE-thorsten-medium` und
+`en_US-lessac-medium`, OCR-Sprachdaten für Deutsch/Englisch sowie ffmpeg für MP3
+eingerichtet. Modelle, OCR und MP3-Encoder werden geprüft. Speechy startet mit
+Piper, voreingestellten Modellpfaden und aktivierter OCR. Windows-Stimmen stehen
+weiterhin zur Auswahl, werden aber nicht automatisch als Windows-Sprachpakete
+installiert: Für den Standardstart übernimmt Piper die Sprachausgabe.
+
+Beim ersten Start sind Internetzugang und mehrere hundert MB freier Speicher
+erforderlich. Weitere Starts verwenden vorhandene gültige Komponenten ohne
+Paket-Upgrades oder erneute Downloads. Fehlende oder beschädigte Komponenten
+können erneut Internet benötigen. Die Anwendung bleibt nach der Einrichtung lokal.
+Bei einem Fehler bleibt die Konsole mit der Fehlermeldung geöffnet.
+
+Mit `start.bat -CheckOnly` lassen sich die Voraussetzungen prüfen, ohne sie
+zu installieren oder die Anwendung zu starten. Eine nicht verwendbare vorhandene
+virtuelle Umgebung wird aufbewahrt; für einen normalen Start wird eine neue angelegt.
+PowerShells Ausführungsrichtlinie wird nur für den gestarteten Prozess gesetzt;
+eine durch die Organisation erzwungene Richtlinie kann den Start weiterhin verhindern.
+
+### Manuell
+
 Python 3.11 oder 3.12 (64 Bit) mit Tkinter installieren. Im Repository-Ordner:
 
 ```powershell

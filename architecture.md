@@ -3,7 +3,8 @@
 Stand: 3. Oktober 2026. Diese Dokumentation beschreibt die Implementierung von
 `text2speech/reader1.py` auf Basis von Commit
 `090fe0537bca356cfdc15e3c5bee42b6d6ea8f56`. Sie beschreibt den vorhandenen Code;
-Erweiterungsvorschläge stehen im letzten Abschnitt.
+Erweiterungsvorschläge stehen im letzten Abschnitt. Der ergänzte automatische
+Startpfad ist in Abschnitt 12 dokumentiert.
 
 ## 1. Zweck und Systemgrenze
 
@@ -327,3 +328,59 @@ implementiert:
   Worker-Lebensdauer an den Hauptprozess binden.
 - GUI- und Audio-Integrationsprüfungen auf einem regulären Windows-System ergänzen.
 - Sehr große Exporte in Kapitel oder mehrere Audiodateien aufteilen.
+
+## 12. Automatischer Start und Einrichtung
+
+`start.bat` wechselt unabhängig vom aktuellen Arbeitsverzeichnis zum Repository
+und startet `scripts/start.ps1` mit Windows PowerShell. Die Ausführungsrichtlinie
+wird ausschließlich für diesen Prozess gesetzt. Bei einem Fehler wartet die
+Batchdatei auf eine Taste und erhält den Fehlercode.
+
+`start.ps1` entfernt geerbte Python-/Tk-Pfadvariablen in seiner eigenen Umgebung
+und sucht eine lokale virtuelle Umgebung, eine eigene Python-Laufzeit, Python
+über den Launcher, PATH oder den üblichen Benutzer-Installationsordner. Der
+Interpreter muss Python 3.11–3.13 in 64 Bit sein und ein verborgenes Tk-Testfenster
+erfolgreich initialisieren. Eine unbrauchbare Umgebung wird aufbewahrt.
+
+Falls erforderlich lädt die Routine Python 3.13.16 von python.org, prüft die
+Authenticode-Signatur der Python Software Foundation und installiert mit Tk und
+pip nach `.runtime/python313`. Danach erstellt sie `.speechy-venv`. Sie ändert
+keinen globalen PATH und fordert keine Administratorrechte an. Weitere Starts
+verwenden eine bereits funktionsfähige Umgebung wieder.
+
+`scripts/bootstrap.py` prüft installierte Paketversionen und Imports, installiert
+fehlende Abhängigkeiten aus `requirements-start.txt` und bereitet Ressourcen vor:
+
+| Ressource | Speicherort | Prüfung |
+| --- | --- | --- |
+| Piper-Modelle und JSON-Konfigurationen | `voices/` | Tatsächliches Laden beider Modelle |
+| Deutsche/englische OCR-Sprachdaten | `tessdata/` | OCR-Selbsttest für beide Sprachen |
+| ffmpeg aus `imageio-ffmpeg` | `.runtime/bin/ffmpeg.exe` | Programmstart und Vorhandensein von `libmp3lame` |
+
+Piper-Downloads werden zunächst in einem temporären Ordner geladen und geprüft.
+OCR-Downloads werden über eine temporäre Datei übernommen. Abgebrochene Downloads
+sollen dadurch nicht als fertig eingerichtet gelten. Es gibt keine persistente
+Einrichtungsdatenbank; jede Ausführung prüft die vorhandenen Komponenten. Die
+OCR-Prüfung ersetzt keinen vollständigen kryptographischen Integritätsnachweis.
+
+Für den GUI-Start setzt die Routine PATH und TESSDATA_PREFIX nur im aktuellen
+Prozess, importiert `reader1` und initialisiert `PDFReaderApp` mit Piper als
+Backend, beiden Modellpfaden und aktivierter OCR. Der normale Einstieg über
+`reader1.py` und sein Windows-Standardbackend bleiben unverändert. Worker erben
+den lokalen ffmpeg-Pfad aus dieser Prozessumgebung.
+
+`start.bat -CheckOnly` installiert nichts, lädt nichts herunter und startet die
+Anwendung nicht. Tk-, Modell-, OCR- und ffmpeg-Prüfungen können dabei dennoch
+kurzzeitig Prozesse oder unsichtbare Testfenster erzeugen. Die Einrichtung
+benötigt bei fehlenden Komponenten Internet; nach erfolgreicher Vorbereitung
+erfordert der normale Start keine Netzwerkabfrage. Windows-SAPI-Sprachpakete
+werden nicht installiert; Piper erfüllt die Sprachvoraussetzung für den
+voreingestellten Start.
+
+Fünf zusätzliche Tests in `tests/test_bootstrap.py` prüfen das Erkennen fehlender
+oder inkompatibler Pakete, Downloads mit Übernahme erst nach Abschluss, den Erhalt
+vorhandener Dateien bei Downloadfehlern und das Unterlassen von Installation und
+Downloads im CheckOnly-Modus. Der PowerShell-Einstieg wurde syntaktisch geprüft
+und über `start.bat -CheckOnly` mit fehlendem geeigneten Python ausgeführt. Der
+vollständige automatische Python-Installationspfad und der anschließende GUI-Start
+wurden in der eingeschränkten Testumgebung nicht ausgeführt.
