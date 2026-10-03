@@ -13,8 +13,9 @@ VOICES = {'Deutsch': 'de_DE-thorsten-medium', 'Englisch': 'en_US-lessac-medium'}
 
 
 def required_packages_ready():
-    requirements = {'PyMuPDF': (1, 24), 'pyttsx3': (2, 98), 'piper-tts': (1, 3), 'imageio-ffmpeg': (0, 6)}
-    upper = {'PyMuPDF': 2, 'pyttsx3': 3, 'piper-tts': 2, 'imageio-ffmpeg': 1}
+    requirements = {'PyMuPDF': (1, 24), 'pyttsx3': (2, 98), 'piper-tts': (1, 3), 'imageio-ffmpeg': (0, 6),
+                    'faster-whisper': (1, 1), 'sounddevice': (0, 5), 'av': (14, 0)}
+    upper = {'PyMuPDF': 2, 'pyttsx3': 3, 'piper-tts': 2, 'imageio-ffmpeg': 1, 'faster-whisper': 2, 'sounddevice': 1, 'av': 17}
     for name, lower in requirements.items():
         try:
             version = importlib.metadata.version(name)
@@ -25,7 +26,7 @@ def required_packages_ready():
             return False
     # Catch broken installations as well as missing distributions.
     result = subprocess.run([sys.executable, '-I', '-c',
-                             'from pymupdf import open; from pyttsx3 import init; from piper import PiperVoice; from imageio_ffmpeg import get_ffmpeg_exe'], capture_output=True)
+                             'from pymupdf import open; from pyttsx3 import init; from piper import PiperVoice; from imageio_ffmpeg import get_ffmpeg_exe; from faster_whisper import WhisperModel; from sounddevice import RawInputStream'], capture_output=True)
     return result.returncode == 0
 
 
@@ -116,17 +117,45 @@ def prepare_assets(check_only=False):
     return voices_dir, tessdata, bin_dir
 
 
+def prepare_stt_assets(check_only=False):
+    from faster_whisper import WhisperModel
+    from faster_whisper.utils import download_model
+    model_dir = ROOT / '.models' / 'whisper-base'
+    try:
+        if not (model_dir / 'model.bin').is_file() or not (model_dir / 'tokenizer.json').is_file():
+            raise RuntimeError('Whisper-Modell fehlt.')
+        model = WhisperModel(str(model_dir), device='cpu', compute_type='int8', local_files_only=True)
+        del model
+        return model_dir
+    except Exception as exc:
+        if check_only:
+            raise RuntimeError('Whisper-Modell fehlt oder ist ungueltig.') from exc
+    print('Lade lokales Whisper-Modell fuer Deutsch/Englisch ...', flush=True)
+    model_dir.parent.mkdir(parents=True, exist_ok=True)
+    os.environ['HF_HOME'] = str(model_dir.parent / 'hf-cache')
+    with tempfile.TemporaryDirectory(dir=model_dir.parent, prefix='whisper-download-') as staging:
+        download_model('base', output_dir=staging, cache_dir=str(model_dir.parent / 'hf-cache'))
+        model = WhisperModel(staging, device='cpu', compute_type='int8', local_files_only=True)
+        del model
+        model_dir.mkdir(exist_ok=True)
+        for path in Path(staging).iterdir():
+            if path.is_file():
+                os.replace(path, model_dir / path.name)
+    return model_dir
+
+
 def main():
     check_only = '--check-only' in sys.argv
     if not required_packages_ready():
         if check_only:
             raise RuntimeError('Python-Pakete fehlen oder sind inkompatibel.')
-        print('Installiere Python-Pakete fuer Piper, PDF, Windows-TTS und ffmpeg ...', flush=True)
+        print('Installiere Python-Pakete fuer Vorlesen und Spracherkennung ...', flush=True)
         subprocess.run([sys.executable, '-I', '-m', 'pip', 'install', '-r', str(ROOT / 'requirements-start.txt')], check=True)
         if not required_packages_ready():
             raise RuntimeError('Paketpruefung nach Installation fehlgeschlagen.')
     voices, tessdata, bin_dir = prepare_assets(check_only)
-    print('PDF, Piper, OCR und MP3: bereit.', flush=True)
+    prepare_stt_assets(check_only)
+    print('PDF, Piper, OCR, MP3 und Spracherkennung: bereit.', flush=True)
     if check_only:
         return
     os.environ['PATH'] = str(bin_dir) + os.pathsep + os.environ.get('PATH', '')

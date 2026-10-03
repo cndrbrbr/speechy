@@ -5,3 +5,4 @@ voices/
 tessdata/
 .runtime/
 .speechy-venv*/
+.models/

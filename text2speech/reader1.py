@@ -15,7 +15,7 @@ import wave
 
 import pymupdf as fitz
 
-APP_TITLE = "Speechy – PDF Vorleser"
+APP_TITLE = "Speechy – Text und Sprache"
 STATE_FILE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Speechy" / "state.json"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -214,7 +214,16 @@ class PDFReaderApp:
         root.after(80, self.poll)
 
     def _build_ui(self):
-        frame = ttk.Frame(self.root, padding=14)
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill="both", expand=True)
+        pdf_tab = ttk.Frame(notebook)
+        speech_tab = ttk.Frame(notebook)
+        notebook.add(pdf_tab, text="Text vorlesen")
+        notebook.add(speech_tab, text="Sprache in Text")
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from speech2text.transcriber import TranscriberPanel
+        self.transcriber = TranscriberPanel(speech_tab, before_record=self.stop_reading)
+        frame = ttk.Frame(pdf_tab, padding=14)
         frame.pack(fill="both", expand=True)
         top = ttk.Frame(frame)
         top.pack(fill="x")
@@ -329,6 +338,9 @@ class PDFReaderApp:
                 "export": export, "ffmpeg": ffmpeg}
 
     def start_reading(self):
+        if self.transcriber.recording:
+            self.status.set("Bitte zuerst die Mikrofonaufnahme beenden.")
+            return
         if self.job is not None:
             return
         self.launch_job()
@@ -465,6 +477,9 @@ class PDFReaderApp:
             self.show_page()
 
     def on_close(self):
+        if not self.transcriber.can_close():
+            return
+        self.transcriber.close()
         self.cancel_job()
         self.save_state()
         if self.doc is not None:
