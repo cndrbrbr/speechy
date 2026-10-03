@@ -2,6 +2,9 @@
 
 Lokaler PDF-Vorleser für Windows 11 mit Python und einer deutschen Oberfläche.
 
+Die [technische Architektur](architecture.md) beschreibt Prozesse, Datenfluss,
+Job-Protokoll, Persistenz und bekannte Grenzen.
+
 ## Funktionen
 
 - Text-PDFs öffnen, Textvorschau und automatisches Weiterblättern.
