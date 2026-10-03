@@ -137,7 +137,9 @@ Für Mikrofon-Diktate:
 1. Reiter **Sprache in Text** öffnen und Deutsch, Englisch oder Automatisch wählen.
 2. Bei Bedarf **Mikrofone aktualisieren** klicken und das Headset auswählen.
    Sonst wird das Windows-Standardmikrofon verwendet. **Aufnahme starten** klicken.
-3. **Aufnahme stoppen** klicken. Danach beginnt automatisch die Transkription.
+3. Beim Sprechen erscheint eine laufende Textvorschau mit kurzer Verzögerung.
+   **Aufnahme stoppen** beendet das Mikrofon und prüft danach die gesamte Aufnahme
+   noch einmal; die Vorschau bleibt bis zum endgültigen Ergebnis sichtbar.
 4. Den erkannten Text prüfen und gegebenenfalls bearbeiten.
 5. **Als Textdatei speichern …** wählen und eine `.txt`-Datei speichern.
 
@@ -150,8 +152,10 @@ erfolgreichem Schreiben ersetzt. Ungespeicherter Text wird vor einer neuen
 Transkription oder dem Schließen durch eine Rückfrage geschützt.
 
 **Abbrechen** beendet Aufnahme/Erkennung. Bereits erkannter Teiltext bleibt
-bearbeitbar und speicherbar. Es gibt keine Erkennung während des Sprechens;
-die Aufnahme wird zuerst beendet. Bei fehlendem Mikrofonzugriff in Windows die
+bearbeitbar und speicherbar. Die Live-Vorschau wird ungefähr alle zwei Sekunden
+aktualisiert, zuzüglich der Rechenzeit des PCs. Der aktuelle Text kann sich dabei
+noch ändern. Nach dem Stoppen ersetzt das abschließende Ergebnis die Vorschau.
+Während der Aufnahme und der Abschlussprüfung ist die Bearbeitung gesperrt. Bei fehlendem Mikrofonzugriff in Windows die
 Freigabe für Desktop-Apps prüfen und das gewünschte Mikrofon auswählen.
 Beim Starten einer Aufnahme wird laufendes Vorlesen gestoppt; Vorlesen lässt
 sich während einer Aufnahme nicht starten.

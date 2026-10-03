@@ -16,10 +16,58 @@ import wave
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / '.models' / 'whisper-base'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+EMIT_LOCK = threading.Lock()
 
 
 def emit(kind, **values):
-    print(json.dumps({'kind': kind, **values}, ensure_ascii=True), flush=True)
+    with EMIT_LOCK:
+        print(json.dumps({'kind': kind, **values}, ensure_ascii=True), flush=True)
+
+
+def load_model(config):
+    from faster_whisper import WhisperModel
+    model_path = Path(config['model'])
+    if not (model_path / 'model.bin').is_file():
+        raise RuntimeError('Whisper-Modell fehlt. Speechy mit start.bat einrichten.')
+    emit('status', text='Lade lokale Spracherkennung …')
+    return WhisperModel(str(model_path), device='cpu', compute_type='int8', local_files_only=True)
+
+
+def preview_recording(config, model, rate, condition, state):
+    """Read bounded snapshots from disk; inference never blocks microphone capture."""
+    cursor = 0
+    last_end = 0
+    confirmed = []
+    chunk_frames = rate * 8
+    language = {'Deutsch': 'de', 'Englisch': 'en', 'Automatisch': None}[config['language']]
+    try:
+        with tempfile.TemporaryDirectory(dir=Path(config['audio']).parent, prefix='preview-') as directory:
+            snapshot = str(Path(directory) / 'chunk.wav')
+            while True:
+                with condition:
+                    condition.wait_for(lambda: state['closed'] or state['frames'] - last_end >= rate * 2)
+                    if state['closed']:
+                        return
+                    end = min(state['frames'], cursor + chunk_frames)
+                    # The writer flushes under the same lock before advancing frames.
+                    with wave.open(config['audio'], 'rb') as source:
+                        source.setpos(cursor)
+                        pcm = source.readframes(end - cursor)
+                with wave.open(snapshot, 'wb') as audio:
+                    audio.setparams((1, 2, rate, 0, 'NONE', 'not compressed'))
+                    audio.writeframes(pcm)
+                segments, _ = model.transcribe(snapshot, language=language, beam_size=1,
+                                               vad_filter=True, condition_on_previous_text=False)
+                current = [segment.text.strip() for segment in segments if segment.text.strip()]
+                emit('transcript', text='\n'.join(confirmed + current), final=False)
+                last_end = end
+                if end - cursor == chunk_frames:
+                    confirmed.extend(current)
+                    cursor = end
+    except Exception as exc:
+        with condition:
+            state['error'] = exc
+        state['stop'].set()
 
 
 def list_input_devices(config):
@@ -50,6 +98,7 @@ def save_text_atomic(path, text):
 
 def record_audio(config, stop_event=None):
     import sounddevice as sd
+    model = load_model(config) if config.get('live') else None
     stop = stop_event if stop_event is not None else threading.Event()
     if stop_event is None:
         def commands():
@@ -58,55 +107,77 @@ def record_audio(config, stop_event=None):
             stop.set()
         threading.Thread(target=commands, daemon=True).start()
     device = config.get('device')
+    condition = threading.Condition()
+    state = {'frames': 0, 'closed': False, 'error': None, 'stop': stop}
+    preview = None
     try:
         info = sd.query_devices(device, 'input')
         rate = int(info['default_samplerate'])
         frames = max(1, rate // 10)
         count = 0
         last_update = time.monotonic()
-        with wave.open(config['audio'], 'wb') as audio:
-            audio.setparams((1, 2, rate, 0, 'NONE', 'not compressed'))
-            with sd.RawInputStream(device=device, samplerate=rate, channels=1, dtype='int16', blocksize=frames) as stream:
-                emit('recording')
-                while not stop.is_set():
-                    data, overflow = stream.read(frames)
-                    audio.writeframes(data)
-                    count += len(data) // 2
-                    if overflow:
-                        emit('status', text='Mikrofonpuffer übergelaufen; ein Teil des Audios fehlt.')
-                    if time.monotonic() - last_update >= 1:
-                        emit('status', text=f'Aufnahme läuft: {int(count / rate)} Sekunden …')
-                        last_update = time.monotonic()
+        try:
+            with open(config['audio'], 'wb') as output, wave.open(output, 'wb') as audio:
+                audio.setparams((1, 2, rate, 0, 'NONE', 'not compressed'))
+                with sd.RawInputStream(device=device, samplerate=rate, channels=1, dtype='int16', blocksize=frames) as stream:
+                    if model is not None:
+                        preview = threading.Thread(target=preview_recording,
+                            args=(config, model, rate, condition, state), daemon=True)
+                        preview.start()
+                    emit('recording')
+                    while not stop.is_set():
+                        data, overflow = stream.read(frames)
+                        with condition:
+                            audio.writeframes(data)
+                            output.flush()
+                            count += len(data) // 2
+                            state['frames'] = count
+                            condition.notify_all()
+                        if overflow:
+                            emit('status', text='Mikrofonpuffer übergelaufen; ein Teil des Audios fehlt.')
+                        if time.monotonic() - last_update >= 1:
+                            emit('status', text=f'Aufnahme läuft: {int(count / rate)} Sekunden …')
+                            last_update = time.monotonic()
+        finally:
+            with condition:
+                state['closed'] = True
+                condition.notify_all()
+            if preview is not None:
+                preview.join()
+        if state['error'] is not None:
+            raise RuntimeError('Live-Erkennung fehlgeschlagen: ' + str(state['error']))
         if count == 0:
             raise RuntimeError('Es wurde kein Audio aufgenommen.')
         emit('recorded', seconds=count / rate)
-        emit('done')
     except Exception as exc:
         raise RuntimeError('Mikrofonaufnahme fehlgeschlagen. Standardmikrofon und Windows-Mikrofonfreigabe für Desktop-Apps prüfen. ' + str(exc)) from exc
+    if model is not None:
+        transcribe_audio(config, model=model, replace_preview=True)
+    else:
+        emit('done')
 
 
-def transcribe_audio(config):
-    from faster_whisper import WhisperModel
-    model_path = Path(config['model'])
-    if not (model_path / 'model.bin').is_file():
-        raise RuntimeError('Whisper-Modell fehlt. Speechy mit start.bat einrichten.')
+def transcribe_audio(config, model=None, replace_preview=False):
     if not Path(config['audio']).is_file():
         raise RuntimeError('Die Audiodatei ist nicht mehr vorhanden.')
-    emit('status', text='Lade lokale Spracherkennung …')
-    model = WhisperModel(str(model_path), device='cpu', compute_type='int8', local_files_only=True)
+    if model is None:
+        model = load_model(config)
     language = {'Deutsch': 'de', 'Englisch': 'en', 'Automatisch': None}[config['language']]
     segments, info = model.transcribe(config['audio'], language=language, beam_size=5,
                                       vad_filter=True, condition_on_previous_text=False)
     emit('status', text=f'Erkenne Sprache ({info.language}) …')
-    count = 0
+    result = []
     for segment in segments:
         text = segment.text.strip()
         if text:
-            emit('segment', text=text)
-            count += 1
+            result.append(text)
+            if not replace_preview:
+                emit('segment', text=text)
             emit('status', text=f'Erkannt bis {segment.end:.1f} Sekunden …')
-    if not count:
+    if not result:
         raise RuntimeError('Keine Sprache erkannt. Lautstärke, Aufnahme und Sprachwahl prüfen.')
+    if replace_preview:
+        emit('transcript', text='\n'.join(result), final=True)
     emit('done')
 
 
@@ -150,7 +221,7 @@ class TranscriberPanel:
         self.device_box.pack(side='left', padx=6)
         self.refresh_button = ttk.Button(microphone_bar, text='Mikrofone aktualisieren', command=self.refresh_devices)
         self.refresh_button.pack(side='left')
-        ttk.Label(frame, text='Die Aufnahme wird nach dem Stoppen transkribiert.').pack(anchor='w', pady=(0, 4))
+        ttk.Label(frame, text='Live-Vorschau beim Sprechen; nach dem Stoppen wird der Text abschließend geprüft.').pack(anchor='w', pady=(0, 4))
         ttk.Label(frame, textvariable=self.source, wraplength=850).pack(anchor='w')
         ttk.Label(frame, textvariable=self.status, wraplength=850).pack(anchor='w', pady=8)
         ttk.Label(frame, text='Erkannter Text (vor dem Speichern bearbeitbar):').pack(anchor='w')
@@ -164,7 +235,7 @@ class TranscriberPanel:
 
     @property
     def recording(self):
-        return self.job is not None and self.job['mode'] == 'record'
+        return self.job is not None and self.job['mode'] == 'record' and not self.job.get('recorded')
 
     def mark_modified(self, event=None):
         if self.text.edit_modified():
@@ -212,10 +283,14 @@ class TranscriberPanel:
             return
         if self.job is not None or not self.allow_replace():
             return
+        if not (MODEL_DIR / 'model.bin').is_file():
+            messagebox.showerror('Speechy', 'Whisper-Modell fehlt. Bitte start.bat ausführen.')
+            return
         if self.before_record:
             self.before_record()
         audio = str(Path(self.storage.name) / (uuid.uuid4().hex + '.wav'))
-        self.launch('record', {'audio': audio, 'device': self.devices.get(self.input_device.get())}, replace_approved=True)
+        self.launch('record', {'audio': audio, 'device': self.devices.get(self.input_device.get()),
+                              'live': True, 'model': str(MODEL_DIR), 'language': self.language.get()}, replace_approved=True)
 
     def start_transcription(self, replace_approved=False):
         if self.job is not None:
@@ -241,8 +316,11 @@ class TranscriberPanel:
             generation = self.generation
             self.job = {'process': process, 'mode': mode, 'config': config, 'done': False, 'recorded': False,
                         'replace_approved': replace_approved}
-            if mode == 'transcribe':
+            if mode == 'transcribe' or mode == 'record':
                 self.text.delete('1.0', 'end')
+                self.text.edit_reset()
+                self.text.edit_modified(False)
+                self.saved = True
             self.status.set({'record': 'Starte Aufnahme …', 'transcribe': 'Starte Transkription …',
                              'devices': 'Suche Mikrofone …'}[mode])
             self.update_controls()
@@ -274,7 +352,10 @@ class TranscriberPanel:
                     elif job['mode'] == 'record' and job['recorded']:
                         self.audio_path = job['config']['audio']
                         self.source.set(f'Mikrofonaufnahme: {job["seconds"]:.1f} Sekunden')
-                        self.start_transcription(replace_approved=job['replace_approved'])
+                        if job['config'].get('live'):
+                            self.status.set('Text erkannt. Prüfen, bearbeiten und als .txt speichern.')
+                        else:
+                            self.start_transcription(replace_approved=job['replace_approved'])
                     else:
                         self.saved = False
                         self.status.set('Text erkannt. Prüfen, bearbeiten und als .txt speichern.')
@@ -297,6 +378,9 @@ class TranscriberPanel:
             elif kind == 'recorded':
                 self.job['recorded'] = True
                 self.job['seconds'] = event['seconds']
+                self.audio_path = self.job['config']['audio']
+                self.update_controls()
+                self.status.set('Aufnahme beendet. Prüfe den vollständigen Text …')
             elif kind == 'status':
                 self.status.set(event['text'])
             elif kind == 'segment':
@@ -305,6 +389,16 @@ class TranscriberPanel:
                 self.text.see('end')
                 self.text.configure(state='disabled')
                 self.saved = False
+            elif kind == 'transcript':
+                self.text.configure(state='normal')
+                self.text.delete('1.0', 'end')
+                if event['text']:
+                    self.text.insert('end', event['text'] + '\n')
+                self.text.edit_reset()
+                self.text.edit_modified(False)
+                self.text.see('end')
+                self.text.configure(state='disabled')
+                self.saved = not bool(event['text'].strip())
             elif kind == 'done':
                 self.job['done'] = True
             elif kind == 'error':
