@@ -11,7 +11,9 @@ Startpfad ist in Abschnitt 12 dokumentiert.
 Speechy ist eine lokale Desktop-Anwendung für Windows. Sie liest PDF-Text vor,
 erkennt optional Text auf gescannten Seiten und exportiert ein vollständiges
 Dokument als WAV oder MP3. Deutsch und Englisch werden explizit ausgewählt;
-automatische Spracherkennung und Übersetzung sind nicht implementiert.
+automatische Spracherkennung und Übersetzung sind für den PDF-Vorleser nicht implementiert.
+Der ergänzte Speech-to-Text-Pfad ist in Abschnitt 13 beschrieben und bietet auch
+eine automatische Sprachauswahl für Audiodateien und Diktate.
 
 Die Anwendung verwendet keine Netzwerk-API. Python-Pakete, Piper-Modelle,
 OCR-Sprachdaten und gegebenenfalls ffmpeg müssen vorab installiert sein.
@@ -384,3 +386,92 @@ Downloads im CheckOnly-Modus. Der PowerShell-Einstieg wurde syntaktisch geprüft
 und über `start.bat -CheckOnly` mit fehlendem geeigneten Python ausgeführt. Der
 vollständige automatische Python-Installationspfad und der anschließende GUI-Start
 wurden in der eingeschränkten Testumgebung nicht ausgeführt.
+
+## 13. Speech-to-Text und einfache Textausgabe
+
+`PDFReaderApp` enthält jetzt ein `ttk.Notebook`. Die bisherige Oberfläche liegt
+im Reiter **Text vorlesen**; `speech2text/transcriber.py` implementiert als
+`TranscriberPanel` den Reiter **Sprache in Text**. Die schweren Abhängigkeiten
+werden erst im Worker beziehungsweise in der Einrichtung importiert. Eine
+manuelle Basisinstallation kann die Oberfläche weiterhin öffnen, benötigt aber
+für die Spracherkennung zusätzliche Pakete und das lokale Modell.
+
+| Bestandteil | Verantwortung |
+| --- | --- |
+| `TranscriberPanel` | Audio auswählen, Aufnahme steuern, Textvorschau bearbeiten und speichern |
+| `record_audio()` | Windows-Standardmikrofon mit sounddevice/PortAudio aufnehmen |
+| `transcribe_audio()` | Audiodatei mit faster-whisper auf der CPU erkennen |
+| `save_text_atomic()` | UTF-8-Text ohne Metadaten über temporäre Datei speichern |
+| `prepare_stt_assets()` | Mehrsprachiges Whisper-base-Modell herunterladen und lokal prüfen |
+
+Wie beim PDF-Vorleser laufen blockierende Aufgaben in separaten Python-Prozessen.
+Das Modul wird mit `--record <job.json>`, `--transcribe <job.json>` oder
+`--devices <job.json>` gestartet. Der Gerätejob liefert Eingabegeräte mit ihrer
+PortAudio-ID und dem Gerätenamen; die GUI bietet sie in einer Auswahl an.
+Die Geräteabfrage öffnet keinen Aufnahmestream. Headsets müssen gegebenenfalls
+nach dem Anschließen über **Mikrofone aktualisieren** neu eingelesen werden.
+Ein Lesethread überträgt stdout-Zeilen in eine GUI-Queue; der Tk-Thread verarbeitet
+diese alle 80 ms, maximal 100 Einträge pro Durchlauf. Generationen verwerfen
+Nachrichten beendeter Sitzungen. Fehler werden als `error`-JSON und Exit-Code 1
+zurückgegeben. Ein erfolgreiches Ende erfordert `done` und Exit-Code 0.
+
+Der Aufnahmejob enthält `audio` und `device` (gewählte ID oder `None` für das
+Windows-Standardgerät). `RawInputStream` nutzt
+einen Kanal, PCM mit 16 Bit und die Standard-Samplerate des Eingabegeräts.
+Der Worker liest etwa 100 ms pro Block und schreibt direkt in eine temporäre
+WAV-Datei; die gesamte Aufnahme wird nicht im RAM gepuffert. `recording`
+signalisiert den gestarteten Stream. Eine Zeile auf stdin oder stdin-EOF setzt
+ein Stop-Ereignis. Nach Schließen von Stream und WAV folgen `recorded` mit der
+Dauer in Sekunden und `done`. Das Stoppen ist somit regulär, während **Abbrechen**
+den Worker hart beendet. Eingabeüberläufe werden gemeldet und können Audioverlust
+bedeuten. Audio wird erst nach dem Stoppen erkannt, nicht während der Aufnahme.
+
+Nach einer erfolgreichen Aufnahme startet die GUI automatisch einen
+Transkriptionsjob. Dessen Konfiguration enthält `audio`, `model` und `language`.
+Das Modell liegt in `.models/whisper-base` und wird mit `device='cpu'`,
+`compute_type='int8'` und `local_files_only=True` geladen. Die Sprachwahl ist
+`de`, `en` oder `None` für automatische Erkennung. VAD filtert Sprachpausen;
+`beam_size=5` und `condition_on_previous_text=False` steuern die Decodierung.
+PyAV übernimmt die Audiodecodierung, sodass für diesen Pfad kein externes ffmpeg
+auf dem PATH erforderlich ist. Audiodateien können im Decoder vollständig in
+den Speicher geladen werden; die Verarbeitung ist kein Streaming für große Dateien.
+
+Der Worker liefert erkannte Abschnitte als `segment` mit `text`. Die GUI fügt
+je Abschnitt eine Zeile ein. Leere Abschnitte werden ignoriert; wurde insgesamt
+kein Text erkannt, folgt ein Fehler. Keine Zeitstempel oder Sprecherkennung
+werden in die Ausgabe übernommen. Während eines Jobs ist die Textbearbeitung
+gesperrt; nach Ende oder Abbruch bleibt der bisher erkannte Text bearbeitbar.
+
+Vor einer neuen Erkennung und beim Schließen prüft die GUI ungespeicherten Text.
+Die Speicherung verlangt `.txt`, verwendet UTF-8 ohne BOM und einen abschließenden
+Zeilenumbruch. `save_text_atomic()` schreibt zuerst eine temporäre Datei im
+Zielordner und ersetzt dann das Ziel mit `os.replace()`. Bei Schreibfehlern bleibt
+eine bestehende Zieldatei erhalten. Die Quell-Audiodatei darf nicht überschrieben
+werden. Ohne ausdrücklichen Speichervorgang wird keine Textdatei erzeugt.
+
+Ein temporäres Verzeichnis gehört zur STT-Oberfläche und bleibt für mehrere Jobs
+bis zum Schließen bestehen. Dort liegen Job-Konfigurationen und Mikrofonaufnahmen.
+Reguläres Schließen beendet den Worker und bereinigt das Verzeichnis; ein Absturz
+kann Dateien zurücklassen. Modell, Konfiguration und Aufnahme liegen lokal und
+unverschlüsselt. Die Implementierung lädt während der Transkription keine Modelle
+nach und überträgt keine Audioaufnahmen an einen Server.
+
+Der automatische Start installiert zusätzlich `requirements-stt.txt` und lädt
+Whisper über `faster_whisper.utils.download_model()` von Hugging Face. Das Modell
+wird zunächst in einem temporären Verzeichnis vollständig geladen und geprüft;
+danach werden seine Dateien in den lokalen Modellordner übernommen. `CheckOnly`
+verlangt ein bereits vorhandenes ladbares Modell und lädt nichts herunter.
+Eine Mikrofonaufnahme gehört nicht zu den Einrichtungsprüfungen: fehlendes Gerät
+oder fehlende Windows-Freigabe wird erst beim bewusst gestarteten Aufnahmejob gemeldet.
+
+Die sechs Tests in `test_transcriber.py` prüfen UTF-8-Ausgabe, Dateierhalt bei
+Speicherfehlern, lokale Whisper-Konfiguration und Segmentnachrichten, eine
+simulierte Mikrofonaufnahme mit gültigem PCM-WAV, veraltete Ereignisse sowie
+die reine Eingabegeräteabfrage ohne Aufnahme.
+Zusammen mit Reader- und Bootstrap-Prüfungen umfasst die Suite jetzt 21 Tests.
+Eine echte Piper→Whisper→UTF-8-Textprüfung mit deutschen und englischen
+Audiodateien wurde zusätzlich erfolgreich ausgeführt. Dabei wurde eine
+Inkompatibilität von faster-whisper 1.x mit PyAV 19 erkannt; die STT-Abhängigkeiten
+begrenzen PyAV deshalb auf den geprüften Bereich `>=14,<17`.
+Reale Mikrofonhardware, GUI und hörbare Wiedergabe benötigen ergänzende Prüfungen
+auf einem regulären Windows-System.
