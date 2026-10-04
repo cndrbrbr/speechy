@@ -340,7 +340,7 @@ Batchdatei auf eine Taste und erhält den Fehlercode.
 
 `start.ps1` entfernt geerbte Python-/Tk-Pfadvariablen in seiner eigenen Umgebung
 und sucht eine lokale virtuelle Umgebung, eine eigene Python-Laufzeit, Python
-über den Launcher, PATH oder den üblichen Benutzer-Installationsordner. Der
+über die PythonCore-Registrierung (HKCU/HKLM), den Launcher, PATH oder den üblichen Benutzer-Installationsordner. Der
 Interpreter muss Python 3.11–3.13 in 64 Bit sein und ein verborgenes Tk-Testfenster
 erfolgreich initialisieren. Eine unbrauchbare Umgebung wird aufbewahrt.
 
@@ -349,6 +349,22 @@ Authenticode-Signatur der Python Software Foundation und installiert mit Tk und
 pip nach `.runtime/python313`. Danach erstellt sie `.speechy-venv`. Sie ändert
 keinen globalen PATH und fordert keine Administratorrechte an. Weitere Starts
 verwenden eine bereits funktionsfähige Umgebung wieder.
+
+Ein erfolgreiches Installer-Ende garantiert nicht, dass die Dateien am erwarteten
+Pfad vorhanden sind: Windows kann die MSI-Pakete weiterhin als installiert führen,
+nachdem ein entpackter Speechy-Ordner ersetzt oder gelöscht wurde. Deshalb prüft
+`Confirm-InstalledPython()` den Interpreter erneut und führt bei einem Fehlschlag
+einmal `/repair /quiet` mit dem signaturgeprüften Installer aus. Anschließend
+prüft es den lokalen Interpreter und registrierte Installationen erneut. Eine
+vorhandene registrierte Installation kann an ihrem ursprünglichen Pfad repariert
+werden; der Starter deinstalliert oder verschiebt sie nicht.
+
+Der Python-Test behält den vollständigen Traceback. Nach weiterhin fehlerhafter
+Prüfung werden die gesammelten Diagnosen in `.runtime/python-probe.log` geschrieben.
+Fehlende `python.exe` und ein vorhandener, aber unbrauchbarer Interpreter bekommen
+unterschiedliche Fehlermeldungen. Installation und Reparatur schreiben eigene
+Installerprotokolle (`python-install.log` und `python-repair.log`). `CheckOnly`
+erreicht weder Installations- noch Reparaturpfad.
 
 `scripts/bootstrap.py` prüft installierte Paketversionen und Imports, installiert
 fehlende Abhängigkeiten aus `requirements-start.txt` und bereitet Ressourcen vor:
@@ -510,3 +526,19 @@ Inkompatibilität von faster-whisper 1.x mit PyAV 19 erkannt; die STT-Abhängigk
 begrenzen PyAV deshalb auf den geprüften Bereich `>=14,<17`.
 Reale Mikrofonhardware, GUI und hörbare Wiedergabe benötigen ergänzende Prüfungen
 auf einem regulären Windows-System.
+
+## 14. Starter-Reparaturprüfung vom 4. Oktober 2026
+
+`tests/test_start.ps1` enthält vier isolierte PowerShell-Prüfungen. Sie testen
+Wiederverwendung ohne Reparatur, erfolgreiche Wiederherstellung mit erneuter
+Prüfung und unterschiedliche Diagnosen für fehlende EXE sowie defektes Python/Tk.
+Der Installer und Interpreter werden dabei simuliert; keine Software wird
+installiert. Ausführung: `powershell -NoProfile -File tests/test_start.ps1`.
+Alle vier Prüfungen und die PowerShell-Syntaxprüfung waren erfolgreich.
+
+Die Nutzerprotokolle zeigten bereits installierte Python-3.13.16-MSI-Pakete und
+einen erneuten Installerlauf ohne Dateioperationen; am Zielpfad fehlte tatsächlich
+`python.exe`. Ein Reparaturversuch aus der Agent-Ausführungsumgebung konnte die
+Installationsregistrierung der normalen Windows-Sitzung nicht sehen und endete
+mit Code 2. Die reale MSI-Reparatur und der anschließende GUI-Start müssen deshalb
+über den aktualisierten Starter in der normalen Windows-Sitzung geprüft werden.

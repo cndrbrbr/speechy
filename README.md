@@ -45,6 +45,11 @@ erforderlich. Weitere Starts verwenden vorhandene gültige Komponenten ohne
 Paket-Upgrades oder erneute Downloads. Fehlende oder beschädigte Komponenten
 können erneut Internet benötigen. Die Anwendung bleibt nach der Einrichtung lokal.
 Bei einem Fehler bleibt die Konsole mit der Fehlermeldung geöffnet.
+Wenn Windows Python noch als installiert führt, aber Dateien im Speechy-Ordner
+fehlen, versucht der Starter einmal die Installer-Reparatur. Die Protokolle
+liegen unter `.runtime/python-install.log`, `.runtime/python-repair.log` und
+bei weiterhin fehlerhaftem Python/Tk unter `.runtime/python-probe.log`.
+Ein fehlendes `python.exe` wird getrennt von einem Tkinter-Fehler gemeldet.
 
 Mit `start.bat -CheckOnly` lassen sich die Voraussetzungen prüfen, ohne sie
 zu installieren oder die Anwendung zu starten. Eine nicht verwendbare vorhandene
@@ -178,6 +183,7 @@ Modell bereitstellen:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+powershell -NoProfile -File tests\test_start.ps1
 ```
 
 Die Tests prüfen echte PDF-Extraktion und WAV-Dateien, simulieren TTS sowie
