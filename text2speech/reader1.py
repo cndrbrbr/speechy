@@ -18,6 +18,21 @@ import pymupdf as fitz
 APP_TITLE = "Speechy – Text und Sprache"
 STATE_FILE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Speechy" / "state.json"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+ICON_DIR = Path(__file__).resolve().parent
+
+
+def set_app_icon(root):
+    """Show the Speechy logo in the title bar and taskbar; a missing icon is not fatal."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            # Own taskbar entry instead of the generic python.exe icon.
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Speechy")
+            root.iconbitmap(default=str(ICON_DIR / "speechy.ico"))
+        else:
+            root.iconphoto(True, tk.PhotoImage(master=root, file=str(ICON_DIR / "speechy.png")))
+    except (OSError, AttributeError, tk.TclError):
+        pass
 
 
 def clean_text(text):
@@ -191,6 +206,7 @@ class PDFReaderApp:
     def __init__(self, root):
         self.root = root
         root.title(APP_TITLE)
+        set_app_icon(root)
         root.geometry("920x650")
         root.minsize(820, 580)
         self.doc = None
