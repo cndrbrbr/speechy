@@ -1,0 +1,76 @@
+SPEECHY - MANUELLE EINRICHTUNG UNTER WINDOWS
+============================================
+
+Normalerweise genuegt ein Doppelklick auf start.bat: Sie erstellt die
+virtuelle Umgebung .speechy-venv, installiert die Pakete, laedt alle Modelle
+und startet Speechy. Die folgenden Befehle machen dasselbe Schritt fuer
+Schritt von Hand (z. B. wenn start.bat scheitert oder offline vorbereitet wird).
+
+Alle Befehle in der Eingabeaufforderung (cmd.exe) im Speechy-Ordner ausfuehren:
+
+    cd /d C:\Pfad\zu\speechy
+
+
+1. Python installieren (einmalig)
+---------------------------------
+Python 3.11, 3.12 oder 3.13 in 64 Bit, z. B.:
+
+    https://www.python.org/ftp/python/3.13.16/python-3.13.16-amd64.exe
+
+Im Installer "tcl/tk and IDLE" und "py launcher" angehakt lassen.
+Pruefen (muss die Versionsnummer ohne Fehler ausgeben):
+
+    py -3.13 -c "import sys, tkinter; print(sys.version)"
+
+
+2. Virtuelle Umgebung und Python-Pakete
+---------------------------------------
+    py -3.13 -m venv .speechy-venv
+    .speechy-venv\Scripts\python.exe -m pip install --upgrade pip
+    .speechy-venv\Scripts\python.exe -m pip install -r requirements-start.txt
+
+requirements-start.txt installiert:
+    PyMuPDF, pyttsx3          (PDF lesen, Windows-Stimmen)
+    piper-tts                 (lokale Piper-Stimmen)
+    faster-whisper, av,
+    sounddevice               (Spracherkennung, Mikrofon)
+    imageio-ffmpeg            (ffmpeg fuer MP3-Export)
+
+
+3. Piper-Stimmen (Deutsch und Englisch) -> Ordner voices\
+----------------------------------------------------------
+    .speechy-venv\Scripts\python.exe -m piper.download_voices --data-dir voices de_DE-thorsten-medium en_US-lessac-medium
+
+
+4. OCR-Sprachdaten (Tesseract) -> Ordner tessdata\
+---------------------------------------------------
+    mkdir tessdata
+    curl.exe -L -o tessdata\deu.traineddata https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/deu.traineddata
+    curl.exe -L -o tessdata\eng.traineddata https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/eng.traineddata
+
+
+5. Whisper-Modell fuer Spracherkennung -> Ordner .models\whisper-base\
+-----------------------------------------------------------------------
+    .speechy-venv\Scripts\python.exe -c "from faster_whisper.utils import download_model; download_model('base', output_dir='.models/whisper-base')"
+
+
+6. ffmpeg fuer MP3-Export -> .runtime\bin\ffmpeg.exe
+----------------------------------------------------
+(ffmpeg ist im Paket imageio-ffmpeg enthalten und wird nur kopiert.)
+
+    .speechy-venv\Scripts\python.exe -c "import imageio_ffmpeg, os, shutil; os.makedirs('.runtime/bin', exist_ok=True); shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), '.runtime/bin/ffmpeg.exe')"
+
+
+7. Pruefen und starten
+----------------------
+Nur pruefen (installiert und laedt nichts):
+
+    start.bat -CheckOnly
+
+Starten:
+
+    start.bat
+
+oder direkt:
+
+    .speechy-venv\Scripts\python.exe scripts\bootstrap.py

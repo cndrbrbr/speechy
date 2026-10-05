@@ -20,17 +20,16 @@ Job-Protokoll, Persistenz und bekannte Grenzen.
 
 ### Automatisch mit start.bat
 
-Das gesamte Repository beziehungsweise ZIP in einen beschreibbaren Ordner
-entpacken und **start.bat** doppelklicken. Die Startdatei verwendet
-`scripts/start.ps1` und `scripts/bootstrap.py`; diese Dateien müssen mit entpackt werden.
+Python 3.11–3.13 (64 Bit) mit „tcl/tk and IDLE“ von
+[python.org](https://www.python.org/downloads/windows/) installieren. Dann das
+gesamte Repository beziehungsweise ZIP in einen beschreibbaren Ordner entpacken
+und **start.bat** doppelklicken. Die Startdatei benötigt kein PowerShell; sie
+verwendet `scripts/bootstrap.py`, das mit entpackt werden muss.
 
-Sie prüft Python 3.11–3.13 (64 Bit) einschließlich eines echten Tk-Fenstertests.
-Fehlt eine geeignete Installation, lädt sie den signierten
-[Python-3.13.16-Installer](https://www.python.org/downloads/windows/)
-von python.org und installiert ihn im Unterordner `.runtime/python313`.
-Eine eigene Umgebung `.speechy-venv` hält die Python-Pakete getrennt.
-Globale PATH-Einstellungen werden nicht geändert; Administratorrechte werden
-nicht angefordert.
+`start.bat` sucht Python 3.13, 3.12 oder 3.11 über den Launcher `py` und
+danach `python` im PATH und prüft dabei Tkinter. Beim ersten Start legt sie die
+Umgebung `.speechy-venv` an. Eine nicht mehr funktionsfähige `.speechy-venv`
+wird neu erstellt. Python selbst wird nicht automatisch installiert.
 
 Danach werden fehlende Pakete, die Piper-Stimmen `de_DE-thorsten-medium` und
 `en_US-lessac-medium`, OCR-Sprachdaten für Deutsch/Englisch sowie ffmpeg für MP3
@@ -45,17 +44,12 @@ erforderlich. Weitere Starts verwenden vorhandene gültige Komponenten ohne
 Paket-Upgrades oder erneute Downloads. Fehlende oder beschädigte Komponenten
 können erneut Internet benötigen. Die Anwendung bleibt nach der Einrichtung lokal.
 Bei einem Fehler bleibt die Konsole mit der Fehlermeldung geöffnet.
-Wenn Windows Python noch als installiert führt, aber Dateien im Speechy-Ordner
-fehlen, versucht der Starter einmal die Installer-Reparatur. Die Protokolle
-liegen unter `.runtime/python-install.log`, `.runtime/python-repair.log` und
-bei weiterhin fehlerhaftem Python/Tk unter `.runtime/python-probe.log`.
-Ein fehlendes `python.exe` wird getrennt von einem Tkinter-Fehler gemeldet.
 
 Mit `start.bat -CheckOnly` lassen sich die Voraussetzungen prüfen, ohne sie
-zu installieren oder die Anwendung zu starten. Eine nicht verwendbare vorhandene
-virtuelle Umgebung wird aufbewahrt; für einen normalen Start wird eine neue angelegt.
-PowerShells Ausführungsrichtlinie wird nur für den gestarteten Prozess gesetzt;
-eine durch die Organisation erzwungene Richtlinie kann den Start weiterhin verhindern.
+zu installieren oder die Anwendung zu starten.
+
+Alle Einrichtungsschritte und Downloads lassen sich auch einzeln von Hand
+ausführen; die Befehle stehen in [INSTALL.txt](INSTALL.txt).
 
 ### Manuell
 
@@ -183,7 +177,6 @@ Modell bereitstellen:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-powershell -NoProfile -File tests\test_start.ps1
 ```
 
 Die Tests prüfen echte PDF-Extraktion und WAV-Dateien, simulieren TTS sowie
