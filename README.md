@@ -1,4 +1,4 @@
-# Speechy
+# <img src="logo.svg" width="40" height="40" alt="" align="top"> Speechy
 
 Lokaler PDF-Vorleser und Spracherkennung für Windows 11 mit Python und einer deutschen Oberfläche.
 
