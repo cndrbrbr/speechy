@@ -36,7 +36,8 @@ class BootstrapTests(unittest.TestCase):
             self.assertFalse(bootstrap.required_packages_ready())
         with patch.object(bootstrap.importlib.metadata, 'version', return_value='9.0'):
             self.assertFalse(bootstrap.required_packages_ready())
-        versions = {'PyMuPDF': '1.28.2', 'pyttsx3': '2.99', 'piper-tts': '1.8.0', 'imageio-ffmpeg': '0.6.0'}
+        versions = {'PyMuPDF': '1.28.2', 'pyttsx3': '2.99', 'piper-tts': '1.8.0', 'imageio-ffmpeg': '0.6.0',
+                    'faster-whisper': '1.1.1', 'sounddevice': '0.5.1', 'av': '14.4.0'}
         with patch.object(bootstrap.importlib.metadata, 'version', side_effect=versions.__getitem__), patch.object(
                 bootstrap.subprocess, 'run', return_value=types.SimpleNamespace(returncode=1)):
             self.assertFalse(bootstrap.required_packages_ready())
