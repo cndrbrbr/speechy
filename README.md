@@ -16,6 +16,16 @@ Job-Protokoll, Persistenz und bekannte Grenzen.
 - Mikrofon aufnehmen oder Audiodateien lokal in Text umwandeln.
 - Erkannten Text bearbeiten und als einfache UTF-8-Textdatei (`.txt`) speichern.
 
+## Screenshots
+
+**Text vorlesen** – PDF öffnen, mit Piper oder Windows-Stimme vorlesen, OCR und WAV/MP3-Export:
+
+![Speechy: Reiter „Text vorlesen“](speechy1.png)
+
+**Sprache in Text** – Mikrofonaufnahme oder Audiodatei lokal in Text umwandeln und als `.txt` speichern:
+
+![Speechy: Reiter „Sprache in Text“](speechy2.png)
+
 ## Installation unter Windows
 
 ### Automatisch mit start.bat
