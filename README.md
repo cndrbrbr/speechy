@@ -16,6 +16,22 @@ Job-Protokoll, Persistenz und bekannte Grenzen.
 - Mikrofon aufnehmen oder Audiodateien lokal in Text umwandeln.
 - Erkannten Text bearbeiten und als einfache UTF-8-Textdatei (`.txt`) speichern.
 
+## Datenschutz: alles lokal
+
+Spracherkennung, Vorlesen und Texterkennung (OCR) laufen vollständig auf dem
+eigenen PC. Mikrofonaufnahmen, Audiodateien, PDFs und erkannte Texte werden
+nicht ins Internet übertragen.
+
+- **Spracherkennung:** Whisper (`faster-whisper`) läuft auf dem Prozessor und
+  lädt das Modell ausschließlich aus `.models/whisper-base`
+  (`local_files_only=True`).
+- **Vorlesen:** Piper-Stimmen aus `voices/` oder installierte Windows-Stimmen.
+- **OCR:** Tesseract-Sprachdaten aus `tessdata/`.
+- **Internet nur bei der Einrichtung:** Beim ersten Start lädt `start.bat`
+  die Python-Pakete, die Piper-Stimmen, die OCR-Sprachdaten und das
+  Whisper-Modell (von Hugging Face) herunter. Dabei werden keine eigenen Daten
+  hochgeladen. Danach funktioniert Speechy auch ohne Internet.
+
 ## Screenshots
 
 **Text vorlesen** – PDF öffnen, mit Piper oder Windows-Stimme vorlesen, OCR und WAV/MP3-Export:
