@@ -1,0 +1,7 @@
+# Nur Windows: Registrierung der Speechy-App-Identitaet (scripts/win_identity.py).
+# bootstrap.py installiert diese Pakete beim ersten Start mit Identitaetspaket.
+winrt-runtime>=3,<4
+winrt-Windows.Foundation>=3,<4
+winrt-Windows.Foundation.Collections>=3,<4
+winrt-Windows.Management.Deployment>=3,<4
+winrt-Windows.ApplicationModel>=3,<4

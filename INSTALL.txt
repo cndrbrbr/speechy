@@ -74,3 +74,32 @@ Starten:
 oder direkt:
 
     .speechy-venv\Scripts\python.exe scripts\bootstrap.py
+
+
+8. Mikrofon nur fuer Speechy freigeben (App-Identitaet)
+-------------------------------------------------------
+start.bat startet Speechy als eigene Windows-App, damit die Mikrofonfreigabe
+nur fuer Speechy gilt und nicht fuer alle Desktop- und Python-Programme.
+Von Hand dieselben Schritte:
+
+    .speechy-venv\Scripts\python.exe -m pip install -r requirements-identity.txt
+
+Zertifikat eintragen (Eingabeaufforderung als Administrator):
+
+    certutil -addstore TrustedPeople packaging\speechy-identity.cer
+
+Registrieren und starten (ohne Administratorrechte):
+
+    .speechy-venv\Scripts\python.exe scripts\bootstrap.py
+
+Danach unter Einstellungen > Datenschutz und Sicherheit > Mikrofon >
+"Apps den Zugriff auf das Mikrofon erlauben" den Schalter "Speechy"
+einschalten. "Desktop-Apps den Zugriff auf das Mikrofon erlauben" kann aus
+bleiben.
+
+Ohne App-Identitaet starten bzw. Registrierung entfernen:
+
+    start.bat -NoIdentity
+    start.bat -RemoveIdentity
+
+Details und Paketbau: packaging\README.md
