@@ -12,10 +12,14 @@ set "PIP_DISABLE_PIP_VERSION_CHECK=1"
 set "VENV=%~dp0.speechy-venv"
 set "VENV_PY=%VENV%\Scripts\python.exe"
 set "CHECK="
+set "MODE="
 set "PROBE=import sys, tkinter; sys.exit(not (3, 11) <= sys.version_info[:2] <= (3, 13))"
 
 if /i "%~1"=="-CheckOnly" set "CHECK=--check-only"
 if /i "%~1"=="--check-only" set "CHECK=--check-only"
+rem -NoIdentity: ohne eigene App-Identitaet starten; -RemoveIdentity: Registrierung entfernen.
+if /i "%~1"=="-NoIdentity" set "MODE=--no-identity"
+if /i "%~1"=="-RemoveIdentity" set "MODE=--remove-identity"
 
 if not exist "scripts\bootstrap.py" (
   echo Fehler: scripts\bootstrap.py fehlt. Bitte das gesamte Speechy-ZIP entpacken.
@@ -48,7 +52,8 @@ if errorlevel 1 (
 
 :run
 rem bootstrap.py installiert fehlende Pakete, laedt Stimmen/OCR/Whisper und startet Speechy.
-"%VENV_PY%" -I scripts\bootstrap.py %CHECK%
+rem Mit Identitaetspaket startet Speechy als eigene Windows-App (eigene Mikrofonfreigabe).
+"%VENV_PY%" -I scripts\bootstrap.py %CHECK% %MODE%
 if errorlevel 1 goto fail
 exit /b 0
 

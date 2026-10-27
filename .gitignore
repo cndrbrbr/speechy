@@ -6,3 +6,5 @@ tessdata/
 .runtime/
 .speechy-venv*/
 .models/
+.speechy-identity.json
+packaging/build/

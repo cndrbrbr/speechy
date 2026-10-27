@@ -380,6 +380,56 @@ oder inkompatibler Pakete, Downloads mit Übernahme erst nach Abschluss, den Erh
 vorhandener Dateien bei Downloadfehlern und das Unterlassen von Installation und
 Downloads im CheckOnly-Modus.
 
+### App-Identität für die Mikrofonfreigabe
+
+Ohne Paketidentität fällt Speechy unter den gemeinsamen Windows-Schalter
+„Desktop-Apps den Zugriff auf das Mikrofon erlauben“, der für alle
+Desktop-Programme und damit auch für jedes andere Python-Programm gilt. Speechy
+registriert sich deshalb über ein **Identitätspaket mit externem Speicherort**
+als eigene App. Die Datenschutzeinstellungen ordnen die Freigabe dann dem
+Paketnamen `Speechy.Local` zu.
+
+```mermaid
+flowchart LR
+    Bat[start.bat] --> Boot["bootstrap.py: Einrichtung"]
+    Boot --> Reg["win_identity.ensure_registered()"]
+    Reg -->|"einmalig, UAC"| Cert["certutil: TrustedPeople"]
+    Reg -->|"WinRT PackageManager"| Pkg["speechy-identity.msix + externer Speicherort = Speechy-Ordner"]
+    Reg --> Launch["explorer shell:AppsFolder\…!Speechy"]
+    Launch --> App["pythonw.exe -c … bootstrap.py --identity-launch (mit Identität)"]
+    App --> GUI[PDFReaderApp]
+    GUI --> Worker["Worker-Prozesse (erben die Identität)"]
+```
+
+| Bestandteil | Verantwortung |
+| --- | --- |
+| `packaging/AppxManifest.xml` | Identität, `microphone`, `runFullTrust`, Start von `.speechy-venv\Scripts\pythonw.exe`; Schreibvirtualisierung aus |
+| `packaging/build-identity-package.*` | Paket bauen und signieren (Entwicklerrechner, Windows SDK) |
+| `scripts/win_identity.py` | Zertifikat prüfen/eintragen, Paket finden/registrieren/entfernen, App-Eintrag starten |
+| `requirements-identity.txt` | WinRT-Projektionen (`winrt-*`), werden bei Bedarf installiert |
+| `.speechy-identity.json` | Registrierter Ordner und SHA-256 des Pakets |
+
+Der Startbefehl im Manifest bestimmt den Speechy-Ordner aus `sys.executable`
+(`.speechy-venv\Scripts\pythonw.exe` → zwei Ebenen höher) und hängt nicht vom
+Arbeitsverzeichnis ab. Mit `--identity-launch` prüft `bootstrap.py` nur das
+Vorhandensein der Dateien, weil `start.bat` die vollständige Einrichtung bereits
+ausgeführt hat; Fehler erscheinen in einem Dialog, da `pythonw.exe` keine
+Konsole hat. Ein verschobener Ordner oder ein neu gebautes Paket führt beim
+nächsten Start zu einer neuen Registrierung.
+
+Die Identität ist nie Voraussetzung: Fehlt das Paket, wird die
+Administratorabfrage abgelehnt oder scheitert die Registrierung, startet
+`bootstrap.py` die Oberfläche wie bisher ohne Identität. `start.bat
+-NoIdentity` erzwingt diesen Weg, `start.bat -RemoveIdentity` entfernt die
+Registrierung, `-CheckOnly` meldet den Status.
+
+`tests/test_identity.py` prüft das Manifest gegen die Konstanten der
+Registrierung und den berechneten Skriptpfad, die Registrierung (erstes Mal,
+unverändert, verschobener Ordner, abgelehnte Administratorabfrage) sowie die
+Startwege mit, ohne und nach fehlgeschlagener Identität. Die Windows-Teile
+(WinRT, UAC, Datenschutzeinstellungen) sind dabei simuliert und müssen auf einem
+echten Windows-Rechner geprüft werden.
+
 ## 13. Speech-to-Text und einfache Textausgabe
 
 `PDFReaderApp` enthält jetzt ein `ttk.Notebook`. Die bisherige Oberfläche liegt

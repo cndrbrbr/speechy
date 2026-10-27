@@ -74,6 +74,28 @@ Bei einem Fehler bleibt die Konsole mit der Fehlermeldung geöffnet.
 Mit `start.bat -CheckOnly` lassen sich die Voraussetzungen prüfen, ohne sie
 zu installieren oder die Anwendung zu starten.
 
+### Mikrofon nur für Speechy freigeben
+
+Windows kennt für normale Desktop-Programme nur einen gemeinsamen Schalter
+„Desktop-Apps den Zugriff auf das Mikrofon erlauben“, der auch jedem anderen
+Python-Programm das Mikrofon freigibt. Deshalb startet `start.bat` Speechy als
+**eigene Windows-App**: Ein kleines signiertes Identitätspaket
+(`packaging/speechy-identity.msix`) registriert diesen Ordner als App
+„Speechy“. Der Python-Code und `.speechy-venv` bleiben unverändert.
+
+- Beim ersten Start fragt Windows **einmal nach Administratorrechten**, um das
+  Speechy-Zertifikat als vertrauenswürdig einzutragen.
+- Danach steht Speechy unter **Einstellungen → Datenschutz und Sicherheit →
+  Mikrofon → „Apps den Zugriff auf das Mikrofon erlauben“** mit eigenem
+  Schalter. „Desktop-Apps“ kann ausgeschaltet bleiben.
+- Speechy erscheint zusätzlich im Startmenü.
+- `start.bat -NoIdentity` startet ohne Identität, `start.bat -RemoveIdentity`
+  entfernt die Registrierung.
+
+Fehlt das Paket oder wird die Administratorabfrage abgelehnt, startet Speechy
+wie bisher ohne Identität. Für die Lautsprecher gibt es keine Freigabe.
+Details, Paketbau und Prüfung: [packaging/README.md](packaging/README.md).
+
 Alle Einrichtungsschritte und Downloads lassen sich auch einzeln von Hand
 ausführen; die Befehle stehen in [INSTALL.txt](INSTALL.txt).
 

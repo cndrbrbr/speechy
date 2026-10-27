@@ -1,4 +1,4 @@
-"""Prepare local dependencies/assets and start Speechy. Invoked by start.bat."""
+"""Prepare local dependencies/assets and start Speechy. Invoked by start.bat and by the app entry of the identity package."""
 import importlib.metadata
 import os
 from pathlib import Path
@@ -144,20 +144,17 @@ def prepare_stt_assets(check_only=False):
     return model_dir
 
 
-def main():
-    check_only = '--check-only' in sys.argv
-    if not required_packages_ready():
-        if check_only:
-            raise RuntimeError('Python-Pakete fehlen oder sind inkompatibel.')
-        print('Installiere Python-Pakete fuer Vorlesen und Spracherkennung ...', flush=True)
-        subprocess.run([sys.executable, '-I', '-m', 'pip', 'install', '-r', str(ROOT / 'requirements-start.txt')], check=True)
-        if not required_packages_ready():
-            raise RuntimeError('Paketpruefung nach Installation fehlgeschlagen.')
-    voices, tessdata, bin_dir = prepare_assets(check_only)
-    prepare_stt_assets(check_only)
-    print('PDF, Piper, OCR, MP3 und Spracherkennung: bereit.', flush=True)
-    if check_only:
-        return
+def missing_assets():
+    """Quick file check for starts that skip the full setup (identity launch)."""
+    voices_dir, tessdata, bin_dir = asset_paths()
+    expected = [voices_dir / (model + suffix) for model in VOICES.values() for suffix in ('.onnx', '.onnx.json')]
+    expected += [tessdata / (language + '.traineddata') for language in ('deu', 'eng')]
+    expected += [bin_dir / 'ffmpeg.exe', ROOT / '.models' / 'whisper-base' / 'model.bin',
+                 ROOT / '.models' / 'whisper-base' / 'tokenizer.json']
+    return [str(path.relative_to(ROOT)) for path in expected if not path.is_file()]
+
+
+def start_gui(voices, tessdata, bin_dir):
     os.environ['PATH'] = str(bin_dir) + os.pathsep + os.environ.get('PATH', '')
     os.environ['TESSDATA_PREFIX'] = str(tessdata)
     sys.path.insert(0, str(ROOT / 'text2speech'))
@@ -173,9 +170,67 @@ def main():
     root.mainloop()
 
 
+def main():
+    check_only = '--check-only' in sys.argv
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    import win_identity
+    if '--remove-identity' in sys.argv:
+        removed = win_identity.remove()
+        print('App-Identitaet entfernt.' if removed else 'Keine App-Identitaet registriert.', flush=True)
+        return
+    if '--identity-launch' in sys.argv:
+        # Started from the app entry (pythonw, no console): start.bat has already
+        # done the full setup, so only check that the files are there.
+        missing = missing_assets()
+        if missing:
+            raise RuntimeError('Speechy ist nicht vollstaendig eingerichtet. Bitte start.bat ausfuehren.\n'
+                               'Es fehlt: ' + ', '.join(missing))
+        start_gui(*asset_paths())
+        return
+    if not required_packages_ready():
+        if check_only:
+            raise RuntimeError('Python-Pakete fehlen oder sind inkompatibel.')
+        print('Installiere Python-Pakete fuer Vorlesen und Spracherkennung ...', flush=True)
+        subprocess.run([sys.executable, '-I', '-m', 'pip', 'install', '-r', str(ROOT / 'requirements-start.txt')], check=True)
+        if not required_packages_ready():
+            raise RuntimeError('Paketpruefung nach Installation fehlgeschlagen.')
+    voices, tessdata, bin_dir = prepare_assets(check_only)
+    prepare_stt_assets(check_only)
+    print('PDF, Piper, OCR, MP3 und Spracherkennung: bereit.', flush=True)
+    if check_only:
+        print(f'App-Identitaet: {win_identity.status()}', flush=True)
+        return
+    if sys.platform == 'win32' and '--no-identity' not in sys.argv:
+        try:
+            win_identity.launch(win_identity.ensure_registered())
+            print('Speechy startet als eigene Windows-App; die Mikrofonfreigabe gilt nur fuer Speechy.', flush=True)
+            return
+        except Exception as exc:
+            # Never block Speechy because of the identity: fall back to the plain start.
+            print(f'Hinweis: {exc}', flush=True)
+            print('Speechy startet ohne eigene App-Identitaet. Das Mikrofon braucht dann die Windows-Freigabe '
+                  '"Desktop-Apps den Zugriff auf das Mikrofon erlauben".', flush=True)
+    start_gui(voices, tessdata, bin_dir)
+
+
+def show_error(message):
+    """Error dialog for the identity launch, which runs under pythonw without a console."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror('Speechy', message)
+        root.destroy()
+    except Exception:
+        pass
+
+
 if __name__ == '__main__':
     try:
         main()
     except Exception as exc:
+        if '--identity-launch' in sys.argv:
+            show_error(f'Fehler beim Start: {exc}')
         print(f'Fehler bei Einrichtung oder Start: {exc}', file=sys.stderr)
         sys.exit(1)
